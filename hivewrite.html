@@ -648,6 +648,9 @@
         <button id="btn-preview" onclick="setMode('preview')" aria-pressed="false">Preview</button>
       </div>
       <div class="tb-sep" role="separator"></div>
+      <button class="tb-btn" id="btn-undo" onclick="historyUndo()" title="Undo (Ctrl+Z)" disabled>↩</button>
+      <button class="tb-btn" id="btn-redo" onclick="historyRedo()" title="Redo (Ctrl+Y)" disabled>↪</button>
+      <div class="tb-sep" role="separator"></div>
       <button class="tb-btn" onclick="wrap('**','**')" title="Bold (Ctrl+B)"><b>B</b></button>
       <button class="tb-btn" onclick="wrap('*','*')" title="Italic (Ctrl+I)"><i>I</i></button>
       <button class="tb-btn" onclick="wrap('~~','~~')" title="Strikethrough"><s>S</s></button>
@@ -756,6 +759,85 @@
   var rewardType = 'default';
   var currentMode = 'write';
   var toastTimer = null;
+
+  /* ─────────────────────────────────────────────
+     Undo / Redo history stack
+  ───────────────────────────────────────────── */
+  var historyStack  = [];   /* past states */
+  var redoStack     = [];   /* future states (after undo) */
+  var historyTimer  = null;
+  var HISTORY_DELAY = 800;  /* ms to debounce — saves a snapshot 800ms after typing stops */
+  var MAX_HISTORY   = 100;  /* cap stack size */
+  var isUndoRedo    = false; /* flag to prevent snapshot during undo/redo itself */
+
+  function snapshotState() {
+    if (isUndoRedo) return;
+    var ta  = document.getElementById('editor-area');
+    var snapshot = {
+      value: ta.value,
+      selStart: ta.selectionStart,
+      selEnd:   ta.selectionEnd
+    };
+    /* Don't push duplicate of last state */
+    if (historyStack.length > 0) {
+      var last = historyStack[historyStack.length - 1];
+      if (last.value === snapshot.value) return;
+    }
+    historyStack.push(snapshot);
+    if (historyStack.length > MAX_HISTORY) historyStack.shift();
+    /* Any new edit clears the redo stack */
+    redoStack = [];
+    updateHistoryButtons();
+  }
+
+  function historyUndo() {
+    if (historyStack.length <= 1) return;
+    var ta      = document.getElementById('editor-area');
+    /* Push current state onto redo stack */
+    redoStack.push({
+      value:    ta.value,
+      selStart: ta.selectionStart,
+      selEnd:   ta.selectionEnd
+    });
+    /* Pop last state and restore */
+    historyStack.pop();
+    var prev = historyStack[historyStack.length - 1];
+    isUndoRedo = true;
+    ta.value = prev.value;
+    ta.selectionStart = prev.selStart;
+    ta.selectionEnd   = prev.selEnd;
+    isUndoRedo = false;
+    updateCounts();
+    updateHistoryButtons();
+    ta.focus();
+  }
+
+  function historyRedo() {
+    if (redoStack.length === 0) return;
+    var ta   = document.getElementById('editor-area');
+    var next = redoStack.pop();
+    /* Push current onto undo stack */
+    historyStack.push({
+      value:    ta.value,
+      selStart: ta.selectionStart,
+      selEnd:   ta.selectionEnd
+    });
+    isUndoRedo = true;
+    ta.value = next.value;
+    ta.selectionStart = next.selStart;
+    ta.selectionEnd   = next.selEnd;
+    isUndoRedo = false;
+    updateCounts();
+    updateHistoryButtons();
+    ta.focus();
+  }
+
+  function updateHistoryButtons() {
+    var undoBtn = document.getElementById('btn-undo');
+    var redoBtn = document.getElementById('btn-redo');
+    if (undoBtn) undoBtn.disabled = historyStack.length <= 1;
+    if (redoBtn) redoBtn.disabled = redoStack.length === 0;
+  }
 
   /* ─────────────────────────────────────────────
      Theme toggle
@@ -973,6 +1055,7 @@
   function getTA() { return document.getElementById('editor-area'); }
 
   function wrap(pre, post) {
+    snapshotNow();
     var ta = getTA();
     var s = ta.selectionStart, e = ta.selectionEnd;
     var sel = ta.value.substring(s, e) || 'text';
@@ -981,9 +1064,11 @@
     ta.selectionStart = s + pre.length;
     ta.selectionEnd   = s + pre.length + sel.length;
     updateCounts();
+    snapshotNow();
   }
 
   function insertLine(prefix) {
+    snapshotNow();
     var ta     = getTA();
     var pos    = ta.selectionStart;
     var before = ta.value.substring(0, pos);
@@ -994,6 +1079,7 @@
     ta.focus();
     ta.selectionStart = ta.selectionEnd = np;
     updateCounts();
+    snapshotNow();
   }
 
   function insertLink() {
@@ -1030,10 +1116,15 @@
 
   /* Keyboard shortcuts */
   document.getElementById('editor-area').addEventListener('keydown', function(e) {
+    if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) { e.preventDefault(); historyUndo(); return; }
+    if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || (e.key === 'z' && e.shiftKey))) { e.preventDefault(); historyRedo(); return; }
     if ((e.ctrlKey || e.metaKey) && e.key === 'b') { e.preventDefault(); wrap('**','**'); }
     if ((e.ctrlKey || e.metaKey) && e.key === 'i') { e.preventDefault(); wrap('*','*'); }
     if ((e.ctrlKey || e.metaKey) && e.key === 'k') { e.preventDefault(); insertLink(); }
   });
+
+  /* Seed the history stack with the initial empty state */
+  snapshotState();
 
   /* ─────────────────────────────────────────────
      Reward selector
@@ -1104,7 +1195,19 @@
     document.getElementById('char-count').textContent = body.length + ' chars';
   }
 
-  document.getElementById('editor-area').addEventListener('input', updateCounts);
+  document.getElementById('editor-area').addEventListener('input', function() {
+    updateCounts();
+    /* Debounced snapshot — waits until typing pauses before saving state */
+    clearTimeout(historyTimer);
+    historyTimer = setTimeout(snapshotState, HISTORY_DELAY);
+  });
+
+  /* Take an immediate snapshot on toolbar actions (wrap, insertLine etc.)
+     so each formatting action is individually undoable */
+  function snapshotNow() {
+    clearTimeout(historyTimer);
+    snapshotState();
+  }
   document.getElementById('title-input').addEventListener('input', function() {
     this.style.height = 'auto';
     this.style.height = this.scrollHeight + 'px';
