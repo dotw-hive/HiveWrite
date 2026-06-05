@@ -104,6 +104,49 @@
   .status-dot.ok  { background: #1a7a4a; }
   .status-dot.err { background: var(--hive-red); }
 
+  #theme-toggle {
+    background: transparent;
+    border: 1px solid var(--hive-border);
+    border-radius: 6px;
+    padding: 5px 10px;
+    cursor: pointer;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: var(--hive-muted);
+    transition: all 0.15s;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  #theme-toggle:hover {
+    border-color: var(--hive-red);
+    color: var(--hive-ink);
+  }
+
+  body.force-light {
+    --hive-paper: #faf8f5;
+    --hive-ink: #2c1810;
+    --hive-muted: #8a7060;
+    --hive-border: #e2d8cc;
+    --panel-bg: #fff;
+    --toolbar-bg: #f5f1ec;
+    --tag-bg: #fdf0f0;
+    --tag-border: #f5c0c0;
+    --tag-text: #991020;
+  }
+
+  body.force-dark {
+    --hive-paper: #1a1210;
+    --hive-ink: #f0ebe4;
+    --hive-muted: #8a7a70;
+    --hive-border: #352820;
+    --panel-bg: #231710;
+    --toolbar-bg: #2a1c14;
+    --tag-bg: #2a0e12;
+    --tag-border: #6a1020;
+    --tag-text: #f09090;
+  }
+
   /* ── Layout ── */
   #main-wrap {
     display: flex;
@@ -580,9 +623,15 @@
     </svg>
     <span>HiveWrite</span>
   </div>
-  <div id="keychain-status">
-    <div class="status-dot" id="kc-dot"></div>
-    <span id="kc-label" style="color: var(--hive-muted);">checking keychain…</span>
+  <div style="display:flex; align-items:center; gap:12px;">
+    <button id="theme-toggle" onclick="toggleTheme()" aria-label="Toggle light/dark mode">
+      <span id="theme-icon">🌙</span>
+      <span id="theme-label">Dark</span>
+    </button>
+    <div id="keychain-status">
+      <div class="status-dot" id="kc-dot"></div>
+      <span id="kc-label" style="color: var(--hive-muted);">checking keychain…</span>
+    </div>
   </div>
 </div>
 
@@ -651,18 +700,9 @@
       <h3>Post Settings</h3>
 
       <div class="field-label">Community / blog</div>
-      <select class="field-select" id="community" aria-label="Community">
-        <option value="">My blog</option>
-        <option value="hive-194913">LeoFinance</option>
-        <option value="hive-167922">Natural Medicine</option>
-        <option value="hive-196037">HivePH</option>
-        <option value="hive-110490">Blockchain Poet</option>
-        <option value="hive-101145">Hive Gaming</option>
-        <option value="hive-174578">OCD</option>
-        <option value="hive-120586">Photography Lovers</option>
-        <option value="hive-140217">Hive Food</option>
-        <option value="hive-163772">Music</option>
-      </select>
+      <input class="field-input" id="community" placeholder="hive-XXXXXX or leave blank"
+        autocomplete="off" autocorrect="off" spellcheck="false"
+        aria-label="Community ID">
 
       <div class="field-label">Beneficiary (optional)</div>
       <input class="field-input" id="beneficiary" placeholder="account:percent  e.g. alice:25" autocomplete="off" aria-label="Beneficiary">
@@ -672,6 +712,7 @@
         <button class="reward-pill selected" data-val="default" onclick="selectReward(this)" aria-pressed="true">50/50<br>HBD+HP</button>
         <button class="reward-pill" data-val="sp" onclick="selectReward(this)" aria-pressed="false">100%<br>HP</button>
         <button class="reward-pill" data-val="decline" onclick="selectReward(this)" aria-pressed="false">Decline<br>rewards</button>
+        <button class="reward-pill" data-val="burn" onclick="selectReward(this)" aria-pressed="false">🔥 Burn<br>rewards</button>
       </div>
     </div>
 
@@ -715,6 +756,47 @@
   var rewardType = 'default';
   var currentMode = 'write';
   var toastTimer = null;
+
+  /* ─────────────────────────────────────────────
+     Theme toggle
+  ───────────────────────────────────────────── */
+  var themeMode = 'auto'; /* auto | light | dark */
+
+  function toggleTheme() {
+    var icon  = document.getElementById('theme-icon');
+    var label = document.getElementById('theme-label');
+    var body  = document.body;
+
+    if (themeMode === 'auto' || themeMode === 'light') {
+      /* Switch to dark */
+      themeMode = 'dark';
+      body.classList.remove('force-light');
+      body.classList.add('force-dark');
+      icon.textContent  = '☀️';
+      label.textContent = 'Light';
+    } else {
+      /* Switch to light */
+      themeMode = 'light';
+      body.classList.remove('force-dark');
+      body.classList.add('force-light');
+      icon.textContent  = '🌙';
+      label.textContent = 'Dark';
+    }
+  }
+
+  /* Set initial toggle label based on system preference */
+  (function() {
+    var prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+    var icon  = document.getElementById('theme-icon');
+    var label = document.getElementById('theme-label');
+    if (prefersDark) {
+      icon.textContent  = '☀️';
+      label.textContent = 'Light';
+    } else {
+      icon.textContent  = '🌙';
+      label.textContent = 'Dark';
+    }
+  })();
 
   /* ─────────────────────────────────────────────
      Keychain detection
@@ -1097,17 +1179,15 @@
 
     /* comment_options — always build from current reward selection so
        percent_hbd is always correct, even when a beneficiary is added */
-    var percentHbd = 10000; /* default 50/50 — Hive uses 5000 for 50% HBD */
-    if (rewardType === 'default') percentHbd = 5000;  /* FIX: was incorrectly 10000 */
+    var percentHbd = 5000; /* 50/50 default */
     if (rewardType === 'sp')      percentHbd = 0;
-    if (rewardType === 'decline') percentHbd = 10000; /* irrelevant — payout set to 0 */
+    if (rewardType === 'decline') percentHbd = 10000; /* irrelevant — payout zeroed */
+    if (rewardType === 'burn')    percentHbd = 5000;  /* burn uses 50/50 split, null beneficiary takes it all */
 
     var maxPayout = rewardType === 'decline' ? '0.000 HBD' : '1000000.000 HBD';
 
-    /* Start with null — only create comment_options if we actually need it */
     var commentOptions = null;
 
-    /* We always need comment_options when reward type is not default OR beneficiary is set */
     /* Beneficiary — weight is 1-10000 where 10000=100%, so user enters 25 for 25% */
     var bAcc = null;
     var bPct = 0;
@@ -1129,6 +1209,12 @@
       } else {
         toast('Beneficiary format: account:percent  e.g. alice:25', 'error'); return;
       }
+    }
+
+    /* Burn rewards — sets null account as 100% beneficiary, overrides any manual beneficiary */
+    if (rewardType === 'burn') {
+      bAcc = 'null';
+      bPct = 10000;
     }
 
     /* Build comment_options whenever reward type is non-default or a beneficiary is set */
@@ -1169,12 +1255,22 @@
       '<path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/>' +
       '</svg> Signing…';
 
-    /* Broadcast via Keychain */
+    /* Broadcast via Keychain — with 35-second timeout in case Keychain never responds */
+    var broadcastTimeout = setTimeout(function() {
+      btn.disabled = false;
+      btn.innerHTML =
+        '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+        '<line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>' +
+        '</svg> Publish to Hive';
+      toast('Request timed out — Keychain did not respond. Please try again.', 'error');
+    }, 35000);
+
     window.hive_keychain.requestBroadcast(
       username,
       operations,
       'posting',
       function(response) {
+        clearTimeout(broadcastTimeout);
         /* Restore button */
         btn.disabled = false;
         btn.innerHTML =
