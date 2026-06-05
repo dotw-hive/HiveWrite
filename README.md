@@ -10,13 +10,14 @@ A clean, lightweight browser-based Markdown editor for publishing posts directly
 
 - **Markdown editor** with live toolbar — bold, italic, strikethrough, headings, blockquote, lists, links, images, code blocks
 - **Write / Preview toggle** — renders your Markdown before you publish
+- **Undo / Redo** — full history stack with toolbar buttons and keyboard shortcuts
 - **Hive Keychain integration** — signs and broadcasts transactions without ever exposing your private key
-- **Tag manager** — add up to 8 tags, press Enter or comma to confirm
-- **Community support** — post to your blog or select a community (LeoFinance, OCD, Hive Gaming, and more)
-- **Reward options** — 50/50 HBD+HP, 100% HP, or Decline rewards
+- **Tag manager** — add up to 8 tags, press Enter or comma to confirm; type multiple tags separated by commas to add them all at once
+- **Community support** — post to your blog or enter any Hive community ID directly (e.g. `hive-194913`)
+- **Reward options** — 50/50 HBD+HP, 100% HP, Decline rewards, or 🔥 Burn rewards
 - **Beneficiary support** — assign a percentage of post rewards to another account
+- **Light / Dark mode toggle** — manual toggle in the header, defaults to your system preference
 - **Transaction confirmation** — shows a link to the transaction on Hive Explorer after a successful post
-- **Dark mode** — automatically follows your system preference
 - **No dependencies** — single self-contained HTML file, no build tools, no npm, no framework
 
 ---
@@ -56,8 +57,8 @@ Place `hivewrite.html` on any web host or static hosting service (GitHub Pages, 
 2. Confirm the **Keychain connected** indicator is green in the top right
 3. Enter your **Hive username** in the sidebar (without the `@`)
 4. Write your post — use the toolbar or type Markdown directly
-5. Add at least one **tag** (press Enter or comma to confirm each one)
-6. Choose a **community** or leave it set to My Blog
+5. Add at least one **tag** (press Enter or comma to confirm; separate multiple tags with commas)
+6. Enter a **community ID** (e.g. `hive-194913`) or leave blank to post to your blog
 7. Select your preferred **reward type**
 8. Optionally add a **beneficiary** in the format `account:percent` (e.g. `alice:25` for 25%)
 9. Click **Publish to Hive** — Keychain will prompt you to sign the transaction
@@ -69,9 +70,23 @@ Place `hivewrite.html` on any web host or static hosting service (GitHub Pages, 
 
 | Shortcut | Action |
 |---|---|
+| Ctrl / Cmd + Z | Undo |
+| Ctrl / Cmd + Y | Redo |
+| Ctrl / Cmd + Shift + Z | Redo |
 | Ctrl / Cmd + B | Bold |
 | Ctrl / Cmd + I | Italic |
 | Ctrl / Cmd + K | Insert link |
+
+---
+
+## Reward Types
+
+| Option | Description |
+|---|---|
+| 50/50 HBD+HP | Default — half paid in HBD, half in Hive Power |
+| 100% HP | All rewards paid as Hive Power |
+| Decline rewards | Post earns no rewards |
+| 🔥 Burn rewards | All rewards sent to `@null`, removing them from circulation |
 
 ---
 
@@ -93,6 +108,10 @@ The percentage must be a whole number between 1 and 100.
 - Ensure you are serving the file over `http://` or `https://`, not opening it as a `file://` URL
 - In Brave, check that Shields are not blocking extension scripts on the page
 - Try reloading the page — Keychain injects asynchronously and may take a moment
+
+**Publish button stays disabled after clicking**
+- If Keychain does not respond within 35 seconds, the button will automatically re-enable and show an error message
+- Check that Keychain is unlocked and try again
 
 **Post published but beneficiary not applied**
 - Check that the beneficiary field uses the correct format: `account:percent`
