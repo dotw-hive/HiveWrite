@@ -633,7 +633,7 @@
     <div id="tags-row">
       <span id="tags-label">Tags:</span>
       <div id="tags-container" role="list" aria-label="Post tags"></div>
-      <input id="tag-input" placeholder="type tag, press Enter" maxlength="24" aria-label="Add tag" autocomplete="off" autocorrect="off" spellcheck="false">
+      <input id="tag-input" placeholder="tag1, tag2 or press Enter" maxlength="24" aria-label="Add tag" autocomplete="off" autocorrect="off" spellcheck="false">
     </div>
 
   </div><!-- /editor-col -->
@@ -775,6 +775,26 @@
   /* ─────────────────────────────────────────────
      Markdown → HTML (lightweight parser)
   ───────────────────────────────────────────── */
+  /* ── Security helpers ── */
+  function sanitizeUrl(url) {
+    /* Decode percent-encoding so javascript:%6a%61%76%61... is caught */
+    var decoded;
+    try { decoded = decodeURIComponent(url.trim()); } catch(e) { decoded = url.trim(); }
+    /* Whitelist safe schemes only */
+    if (/^(https?:|ipfs:|hive:)/i.test(decoded)) return escAttr(decoded);
+    /* mailto is sometimes useful but not needed here — block everything else */
+    return '#blocked';
+  }
+
+  function escAttr(str) {
+    return str
+      .replace(/&/g, '&amp;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
+  }
+
   function markdownToHtml(raw) {
     // Escape HTML first
     var s = raw
@@ -782,9 +802,10 @@
       .replace(/</g,'&lt;')
       .replace(/>/g,'&gt;');
 
-    // Fenced code blocks
-    s = s.replace(/```([a-z]*)\n([\s\S]*?)```/g, function(_, lang, code) {
-      return '<pre><code' + (lang ? ' class="language-' + lang + '"' : '') + '>' + code + '</code></pre>';
+    // Fenced code blocks — FIX: sanitize lang to alphanumeric+hyphen only
+    s = s.replace(/```([a-z0-9-]*)\n([\s\S]*?)```/g, function(_, lang, code) {
+      var safeLang = lang.replace(/[^a-z0-9-]/gi, '').substring(0, 32);
+      return '<pre><code' + (safeLang ? ' class="language-' + safeLang + '"' : '') + '>' + code + '</code></pre>';
     });
 
     // Inline code
@@ -823,11 +844,18 @@
       return '<ol>' + items + '</ol>\n';
     });
 
-    // Images before links
-    s = s.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '<img src="$2" alt="$1">');
+    // Images before links — FIX: sanitize src URL and alt attribute
+    s = s.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, function(_, alt, url) {
+      var safeUrl = sanitizeUrl(url);
+      var safeAlt = escAttr(alt);
+      return '<img src="' + safeUrl + '" alt="' + safeAlt + '">';
+    });
 
-    // Links
-    s = s.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+    // Links — FIX: sanitize href URL, block javascript: and data: schemes
+    s = s.replace(/\[([^\]]+)\]\(([^)]+)\)/g, function(_, text, url) {
+      var safeUrl = sanitizeUrl(url);
+      return '<a href="' + safeUrl + '" target="_blank" rel="noopener noreferrer">' + text + '</a>';
+    });
 
     // Paragraphs — wrap lines not already wrapped in a block element
     var lines = s.split('\n');
@@ -946,7 +974,12 @@
   tagInput.addEventListener('keydown', function(e) {
     if ((e.key === 'Enter' || e.key === ',') && this.value.trim()) {
       e.preventDefault();
-      addTag(this.value.trim().replace(/,+/g,'').toLowerCase().replace(/\s+/g,'-'));
+      /* FIX: split on commas so "tag1, tag2" adds two tags instead of merging into one */
+      var segments = this.value.split(',');
+      segments.forEach(function(seg) {
+        var t = seg.trim().toLowerCase().replace(/\s+/g, '-');
+        if (t) addTag(t);
+      });
       this.value = '';
     } else if (e.key === 'Backspace' && this.value === '' && tags.length > 0) {
       removeTag(tags.length - 1);
@@ -1062,37 +1095,28 @@
       format: 'markdown'
     });
 
-    /* comment_options extensions */
+    /* comment_options — always build from current reward selection so
+       percent_hbd is always correct, even when a beneficiary is added */
+    var percentHbd = 10000; /* default 50/50 — Hive uses 5000 for 50% HBD */
+    if (rewardType === 'default') percentHbd = 5000;  /* FIX: was incorrectly 10000 */
+    if (rewardType === 'sp')      percentHbd = 0;
+    if (rewardType === 'decline') percentHbd = 10000; /* irrelevant — payout set to 0 */
+
+    var maxPayout = rewardType === 'decline' ? '0.000 HBD' : '1000000.000 HBD';
+
+    /* Start with null — only create comment_options if we actually need it */
     var commentOptions = null;
 
-    if (rewardType === 'decline') {
-      commentOptions = {
-        author: username,
-        permlink: permlink,
-        max_accepted_payout: '0.000 HBD',
-        percent_hbd: 10000,
-        allow_votes: true,
-        allow_curation_rewards: true,
-        extensions: []
-      };
-    } else if (rewardType === 'sp') {
-      commentOptions = {
-        author: username,
-        permlink: permlink,
-        max_accepted_payout: '1000000.000 HBD',
-        percent_hbd: 0,
-        allow_votes: true,
-        allow_curation_rewards: true,
-        extensions: []
-      };
-    }
-
+    /* We always need comment_options when reward type is not default OR beneficiary is set */
     /* Beneficiary — weight is 1-10000 where 10000=100%, so user enters 25 for 25% */
+    var bAcc = null;
+    var bPct = 0;
+
     if (beneficiary) {
       var parts = beneficiary.split(':');
       if (parts.length === 2) {
-        var bAcc = parts[0].trim().replace(/^@/, '');
-        var bPct = Math.round(parseFloat(parts[1]) * 100); /* 25 -> 2500 */
+        bAcc = parts[0].trim().replace(/^@/, '');
+        bPct = Math.round(parseFloat(parts[1]) * 100); /* 25 -> 2500 */
         if (!bAcc) {
           toast('Beneficiary account name is missing', 'error'); return;
         }
@@ -1102,22 +1126,22 @@
         if (bPct > 10000) {
           toast('Beneficiary percentage cannot exceed 100%', 'error'); return;
         }
-        if (!commentOptions) {
-          commentOptions = {
-            author: username,
-            permlink: permlink,
-            max_accepted_payout: '1000000.000 HBD',
-            percent_hbd: 10000,
-            allow_votes: true,
-            allow_curation_rewards: true,
-            extensions: []
-          };
-        }
-        /* Hive requires extensions as [[0, { beneficiaries: [...] }]] — must be set, not pushed onto a prior array */
-        commentOptions.extensions = [[0, { beneficiaries: [{ account: bAcc, weight: bPct }] }]];
       } else {
         toast('Beneficiary format: account:percent  e.g. alice:25', 'error'); return;
       }
+    }
+
+    /* Build comment_options whenever reward type is non-default or a beneficiary is set */
+    if (rewardType !== 'default' || bAcc) {
+      commentOptions = {
+        author: username,
+        permlink: permlink,
+        max_accepted_payout: maxPayout,
+        percent_hbd: percentHbd,
+        allow_votes: true,
+        allow_curation_rewards: true,
+        extensions: bAcc ? [[0, { beneficiaries: [{ account: bAcc, weight: bPct }] }]] : []
+      };
     }
 
     /* Build operations array */
