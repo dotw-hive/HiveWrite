@@ -186,20 +186,22 @@
     background: transparent;
     border: none;
     border-radius: 5px;
-    padding: 5px 8px;
+    padding: 6px 10px;
     cursor: pointer;
-    color: var(--hive-muted);
+    color: var(--hive-ink);
     font-family: 'JetBrains Mono', monospace;
-    font-size: 12px;
-    font-weight: 500;
+    font-size: 14px;
+    font-weight: 600;
     transition: background 0.12s, color 0.12s;
     line-height: 1;
-    min-width: 28px;
+    min-width: 32px;
     text-align: center;
+    opacity: 0.75;
   }
   .tb-btn:hover {
     background: var(--hive-border);
     color: var(--hive-ink);
+    opacity: 1;
   }
 
   /* ── Write area ── */
@@ -476,8 +478,10 @@
     background: transparent;
     font-family: 'JetBrains Mono', monospace;
     font-size: 10px;
+    font-weight: 600;
     cursor: pointer;
-    color: var(--hive-muted);
+    color: var(--hive-ink);
+    opacity: 0.75;
     text-align: center;
     transition: all 0.12s;
     line-height: 1.3;
@@ -1306,6 +1310,10 @@
 
     /* comment_options — always build from current reward selection so
        percent_hbd is always correct, even when a beneficiary is added */
+    /* Read reward type directly from the selected pill to avoid any closure issues */
+    const selectedPill = document.querySelector('.reward-pill.selected');
+    rewardType = selectedPill ? selectedPill.getAttribute('data-val') : 'default';
+
     let percentHbd = 5000; /* 50/50 default */
     if (rewardType === 'sp')      percentHbd = 0;
     if (rewardType === 'decline') percentHbd = 10000; /* irrelevant — payout zeroed */
