@@ -691,7 +691,7 @@
     <div id="tags-row">
       <span id="tags-label">Tags:</span>
       <div id="tags-container" role="list" aria-label="Post tags"></div>
-      <input id="tag-input" placeholder="tag1, tag2 or press Enter" maxlength="24" aria-label="Add tag" autocomplete="off" autocorrect="off" spellcheck="false">
+      <input id="tag-input" placeholder="tag, space or Enter to add" maxlength="24" aria-label="Add tag" autocomplete="off" autocorrect="off" spellcheck="false">
     </div>
 
   </div><!-- /editor-col -->
@@ -1161,10 +1161,10 @@
   const tagInput = document.getElementById('tag-input');
 
   tagInput.addEventListener('keydown', function(e) {
-    if ((e.key === 'Enter' || e.key === ',') && this.value.trim()) {
+    if ((e.key === 'Enter' || e.key === ',' || e.key === ' ') && this.value.trim()) {
       e.preventDefault();
-      /* FIX: split on commas so "tag1, tag2" adds two tags instead of merging into one */
-      let segments = this.value.split(',');
+      /* Split on commas and spaces so "tag1, tag2" or "tag1 tag2" adds multiple tags */
+      let segments = this.value.split(/[,\s]+/);
       segments.forEach(function(seg) {
         let t = seg.trim().toLowerCase().replace(/\s+/g, '-');
         if (t) addTag(t);
