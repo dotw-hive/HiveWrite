@@ -448,8 +448,60 @@
     border-top: 1px solid var(--hive-border);
     display: flex;
     justify-content: space-between;
+    align-items: center;
     background: var(--toolbar-bg);
     flex-shrink: 0;
+  }
+
+  #draft-controls {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  #draft-indicator {
+    display: none;
+    color: var(--hive-success);
+    cursor: pointer;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    border: 1px solid var(--hive-success);
+    border-radius: 4px;
+    padding: 2px 8px;
+    transition: all 0.15s;
+    background: transparent;
+  }
+  #draft-indicator:hover {
+    background: var(--hive-success);
+    color: var(--hive-paper);
+  }
+
+  #clear-draft-btn {
+    display: none;
+    background: transparent;
+    border: 1px solid var(--hive-border);
+    border-radius: 4px;
+    padding: 2px 8px;
+    cursor: pointer;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    color: var(--hive-muted);
+    transition: all 0.15s;
+  }
+  #clear-draft-btn:hover {
+    border-color: var(--hive-red);
+    color: var(--hive-red);
+  }
+  #clear-draft-btn.confirm {
+    border-color: var(--hive-red);
+    color: #fff;
+    background: var(--hive-red);
+    font-weight: 600;
+  }
+  #clear-draft-btn.confirm:hover {
+    background: var(--hive-accent);
+    border-color: var(--hive-accent);
+    color: #fff;
   }
 
   /* ── Toast ── */
@@ -505,6 +557,66 @@
     margin-bottom: 12px;
   }
   #kc-notice a { color: var(--hive-red); }
+
+  /* ── Draft restore banner ── */
+  #draft-banner {
+    display: none;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 10px 44px;
+    background: var(--tag-bg);
+    border-bottom: 1px solid var(--tag-border);
+    flex-shrink: 0;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    color: var(--hive-ink);
+  }
+
+  #draft-banner-text {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  #draft-banner-text strong {
+    color: var(--tag-text);
+    font-weight: 600;
+  }
+
+  #draft-banner-actions {
+    display: flex;
+    gap: 8px;
+    flex-shrink: 0;
+  }
+
+  #draft-restore-btn, #draft-discard-btn {
+    border: 1px solid var(--hive-border);
+    border-radius: 6px;
+    padding: 5px 14px;
+    cursor: pointer;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    background: transparent;
+    color: var(--hive-muted);
+    transition: all 0.15s;
+  }
+
+  #draft-restore-btn {
+    border-color: var(--hive-success);
+    color: var(--hive-success);
+    font-weight: 600;
+  }
+  #draft-restore-btn:hover {
+    background: var(--hive-success);
+    color: #fff;
+  }
+
+  #draft-discard-btn:hover {
+    border-color: var(--hive-red);
+    color: var(--hive-red);
+  }
 </style>
 </head>
 <body>
@@ -563,6 +675,16 @@
       <button class="tb-btn" onclick="insertLine('---\n')" title="Horizontal rule">—</button>
     </div>
 
+    <div id="draft-banner">
+      <div id="draft-banner-text">
+        <strong>Saved draft found:</strong> <span id="draft-banner-preview"></span>
+      </div>
+      <div id="draft-banner-actions">
+        <button id="draft-restore-btn" onclick="restoreDraft()">Restore</button>
+        <button id="draft-discard-btn" onclick="discardDraft()">Discard</button>
+      </div>
+    </div>
+
     <div id="editor-wrap">
       <div id="title-wrap">
         <span id="title-label">Post Title</span>
@@ -593,8 +715,8 @@
       <h3>Post Settings</h3>
       <div class="field-label">Community / blog</div>
       <input class="field-input" id="community" placeholder="hive-XXXXXX or leave blank" autocomplete="off" autocorrect="off" spellcheck="false" aria-label="Community ID">
-      <div class="field-label">Beneficiary (optional)</div>
-      <input class="field-input" id="beneficiary" placeholder="account:percent  e.g. alice:25" autocomplete="off" aria-label="Beneficiary">
+      <div class="field-label">Beneficiaries (optional)</div>
+      <input class="field-input" id="beneficiary" placeholder="alice:10, james:5  (max 100% total)" autocomplete="off" aria-label="Beneficiaries">
       <div class="field-label">Rewards</div>
       <div class="reward-pills" role="group" aria-label="Reward type">
         <button class="reward-pill selected" data-val="default" onclick="selectReward(this)" aria-pressed="true">50/50<br>HBD+HP</button>
@@ -627,6 +749,10 @@
 
 <div id="status-bar" role="status" aria-live="polite">
   <span id="word-count">0 words</span>
+  <div id="draft-controls">
+    <button id="draft-indicator" onclick="saveDraftNow()" title="Click to save now" aria-label="Save draft now">✓ Draft saved</button>
+    <button id="clear-draft-btn" onclick="clearDraft()" aria-label="Clear draft">× Clear draft</button>
+  </div>
   <span id="char-count">0 chars</span>
 </div>
 
@@ -909,6 +1035,7 @@
     });
     el.className = 'reward-pill selected'; el.setAttribute('aria-pressed','true');
     rewardType = el.getAttribute('data-val');
+    scheduleDraftSave();
   }
 
   /* ── Tag manager ── */
@@ -933,9 +1060,10 @@
     if (!t || tags.includes(t)) return;
     if (tags.length >= 8) { toast('Maximum 8 tags', 'error'); return; }
     tags.push(t); renderTags();
+    scheduleDraftSave();
   }
 
-  function removeTag(i) { tags.splice(i, 1); renderTags(); }
+  function removeTag(i) { tags.splice(i, 1); renderTags(); scheduleDraftSave(); }
 
   function renderTags() {
     let c = document.getElementById('tags-container');
@@ -1032,29 +1160,64 @@
 
     let maxPayout = rewardType === 'decline' ? '0.000 HBD' : '1000000.000 HBD';
     let commentOptions = null;
-    let bAcc = null, bPct = 0;
+    let beneficiaryList = [];
 
     if (beneficiary) {
-      let parts = beneficiary.split(':');
-      if (parts.length === 2) {
-        bAcc = parts[0].trim().replace(/^@/, '');
-        bPct = Math.round(parseFloat(parts[1]) * 100);
-        if (!bAcc)                        { toast('Beneficiary account name is missing', 'error'); return; }
-        if (isNaN(bPct) || bPct <= 0)     { toast('Beneficiary percentage must be greater than 0', 'error'); return; }
-        if (bPct > 10000)                 { toast('Beneficiary percentage cannot exceed 100%', 'error'); return; }
-      } else {
-        toast('Beneficiary format: account:percent  e.g. alice:25', 'error'); return;
+      let entries = beneficiary.split(',');
+      for (let i = 0; i < entries.length; i++) {
+        let entry = entries[i].trim();
+        if (!entry) continue;
+        let parts = entry.split(':');
+        if (parts.length !== 2) {
+          toast('Beneficiary format: account:percent  e.g. alice:10, james:10', 'error'); return;
+        }
+        let acc = parts[0].trim().replace(/^@/, '');
+        let pct = Math.round(parseFloat(parts[1]) * 100); /* 25 -> 2500 */
+        if (!acc)                    { toast('Beneficiary account name is missing', 'error'); return; }
+        if (isNaN(pct) || pct <= 0)  { toast('Beneficiary percentage must be greater than 0 (' + acc + ')', 'error'); return; }
+        if (pct > 10000)             { toast('Beneficiary percentage cannot exceed 100% (' + acc + ')', 'error'); return; }
+        beneficiaryList.push({ account: acc, weight: pct });
+      }
+
+      /* Check for duplicate accounts */
+      let seen = {};
+      for (let i = 0; i < beneficiaryList.length; i++) {
+        let acc = beneficiaryList[i].account;
+        if (seen[acc]) { toast('Duplicate beneficiary: ' + acc, 'error'); return; }
+        seen[acc] = true;
+      }
+
+      if (beneficiaryList.length > 8) {
+        toast('Maximum 8 beneficiaries allowed', 'error'); return;
+      }
+
+      /* Sum must not exceed 100% (10000) */
+      let totalPct = beneficiaryList.reduce(function(sum, b) { return sum + b.weight; }, 0);
+      if (totalPct > 10000) {
+        toast('Beneficiary percentages add up to ' + (totalPct / 100) + '% — must not exceed 100%', 'error');
+        return;
+      }
+
+      /* Warn if rewards are declined — beneficiaries get nothing since payout is zeroed */
+      if (rewardType === 'decline') {
+        toast('Rewards declined — beneficiaries will receive nothing', 'error');
       }
     }
 
-    if (rewardType === 'burn') { bAcc = 'null'; bPct = 10000; }
+    /* Burn rewards — sets null account as 100% beneficiary, overrides any manual beneficiaries */
+    if (rewardType === 'burn') {
+      beneficiaryList = [{ account: 'null', weight: 10000 }];
+    }
 
-    if (rewardType !== 'default' || bAcc) {
+    /* Hive requires beneficiaries sorted alphabetically by account name */
+    beneficiaryList.sort(function(a, b) { return a.account.localeCompare(b.account); });
+
+    if (rewardType !== 'default' || beneficiaryList.length > 0) {
       commentOptions = {
         author: username, permlink: permlink,
         max_accepted_payout: maxPayout, percent_hbd: percentHbd,
         allow_votes: true, allow_curation_rewards: true,
-        extensions: bAcc ? [[0, { beneficiaries: [{ account: bAcc, weight: bPct }] }]] : []
+        extensions: beneficiaryList.length > 0 ? [[0, { beneficiaries: beneficiaryList }]] : []
       };
     }
 
@@ -1099,6 +1262,175 @@
     });
   }
 
+  /* ─────────────────────────────────────────────
+     Autosave — localStorage
+  ───────────────────────────────────────────── */
+  const DRAFT_KEY    = 'hivewrite_draft';
+  let   draftTimer   = null;
+  const DRAFT_DELAY  = 1500;
+
+  function collectDraft() {
+    const selectedPill = document.querySelector('.reward-pill.selected');
+    return {
+      title:      document.getElementById('title-input').value,
+      body:       document.getElementById('editor-area').value,
+      tags:       tags.slice(),
+      username:   document.getElementById('username').value,
+      community:  document.getElementById('community').value,
+      beneficiary:document.getElementById('beneficiary').value,
+      rewardType: selectedPill ? selectedPill.getAttribute('data-val') : 'default'
+    };
+  }
+
+  function saveDraft() {
+    let draft = collectDraft();
+    /* Don't save if completely empty */
+    if (!draft.title && !draft.body && draft.tags.length === 0) return;
+    try {
+      localStorage.setItem(DRAFT_KEY, JSON.stringify(draft));
+      showDraftIndicator();
+    } catch(e) {
+      console.warn('[HiveWrite] Draft save failed:', e);
+    }
+  }
+
+  function saveDraftNow() {
+    clearTimeout(draftTimer);
+    saveDraft();
+  }
+
+  function showDraftIndicator() {
+    let ind = document.getElementById('draft-indicator');
+    let clr = document.getElementById('clear-draft-btn');
+    ind.style.display = 'inline';
+    clr.style.display = 'inline';
+  }
+
+  function hideDraftIndicator() {
+    document.getElementById('draft-indicator').style.display = 'none';
+    document.getElementById('clear-draft-btn').style.display = 'none';
+  }
+
+  function scheduleDraftSave() {
+    clearTimeout(draftTimer);
+    draftTimer = setTimeout(saveDraft, DRAFT_DELAY);
+  }
+
+  let clearDraftPending = false;
+  let clearDraftResetTimer = null;
+
+  function clearDraft() {
+    let btn = document.getElementById('clear-draft-btn');
+
+    if (!clearDraftPending) {
+      clearDraftPending = true;
+      btn.textContent = 'Are you sure?';
+      btn.classList.add('confirm');
+      clearTimeout(clearDraftResetTimer);
+      clearDraftResetTimer = setTimeout(function() {
+        clearDraftPending = false;
+        btn.textContent = '× Clear draft';
+        btn.classList.remove('confirm');
+      }, 3000);
+      return;
+    }
+
+    /* Confirmed — proceed with clearing */
+    clearTimeout(clearDraftResetTimer);
+    clearDraftPending = false;
+    btn.textContent = '× Clear draft';
+    btn.classList.remove('confirm');
+
+    try { localStorage.removeItem(DRAFT_KEY); } catch(e) {}
+    /* Clear editor */
+    document.getElementById('title-input').value = '';
+    document.getElementById('editor-area').value = '';
+    document.getElementById('title-input').style.height = 'auto';
+    tags = [];
+    renderTags();
+    updateCounts();
+    hideDraftIndicator();
+    /* Reset history */
+    historyStack = [];
+    redoStack    = [];
+    snapshotState();
+    updateHistoryButtons();
+    toast('Draft cleared', '');
+  }
+
+  function buildDraftPreview(draft) {
+    if (draft.title && draft.title.trim()) {
+      return draft.title.trim().substring(0, 80);
+    }
+    if (draft.body && draft.body.trim()) {
+      let preview = draft.body.trim().replace(/\s+/g, ' ').substring(0, 80);
+      return preview + (draft.body.trim().length > 80 ? '…' : '');
+    }
+    return '(untitled draft)';
+  }
+
+  function checkForDraft() {
+    let raw;
+    try { raw = localStorage.getItem(DRAFT_KEY); } catch(e) { return; }
+    if (!raw) return;
+    let draft;
+    try { draft = JSON.parse(raw); } catch(e) { return; }
+
+    document.getElementById('draft-banner-preview').textContent = buildDraftPreview(draft);
+    document.getElementById('draft-banner').style.display = 'flex';
+  }
+
+  function restoreDraft() {
+    let raw;
+    try { raw = localStorage.getItem(DRAFT_KEY); } catch(e) { return; }
+    if (!raw) return;
+    let draft;
+    try { draft = JSON.parse(raw); } catch(e) { return; }
+
+    if (draft.title) {
+      let ti = document.getElementById('title-input');
+      ti.value = draft.title;
+      ti.style.height = 'auto';
+      ti.style.height = ti.scrollHeight + 'px';
+    }
+    if (draft.body) {
+      document.getElementById('editor-area').value = draft.body;
+    }
+    if (draft.tags && draft.tags.length > 0) {
+      tags = [];
+      draft.tags.forEach(function(t) { addTag(t); });
+    }
+    if (draft.username)    document.getElementById('username').value    = draft.username;
+    if (draft.community)   document.getElementById('community').value   = draft.community;
+    if (draft.beneficiary) document.getElementById('beneficiary').value = draft.beneficiary;
+    if (draft.rewardType) {
+      let pill = document.querySelector('.reward-pill[data-val="' + draft.rewardType + '"]');
+      if (pill) selectReward(pill);
+    }
+
+    updateCounts();
+    snapshotState();
+    showDraftIndicator();
+    document.getElementById('draft-banner').style.display = 'none';
+    toast('Draft restored', 'success');
+  }
+
+  function discardDraft() {
+    try { localStorage.removeItem(DRAFT_KEY); } catch(e) {}
+    document.getElementById('draft-banner').style.display = 'none';
+    toast('Draft discarded', '');
+  }
+
+  /* Hook autosave onto editor inputs */
+  document.getElementById('title-input').addEventListener('input',   scheduleDraftSave);
+  document.getElementById('editor-area').addEventListener('input',   scheduleDraftSave);
+  document.getElementById('username').addEventListener('input',      scheduleDraftSave);
+  document.getElementById('community').addEventListener('input',     scheduleDraftSave);
+  document.getElementById('beneficiary').addEventListener('input',   scheduleDraftSave);
+
+  /* Check for a saved draft on load — shows banner, does not auto-restore */
+  checkForDraft();
+
   /* ── Also fixed: lbl.style.color was using 'let(...)' instead of 'var(...)' ── */
 
   window.wrap            = wrap;
@@ -1113,6 +1445,10 @@
   window.historyUndo     = historyUndo;
   window.historyRedo     = historyRedo;
   window.toggleTheme     = toggleTheme;
+  window.saveDraftNow    = saveDraftNow;
+  window.clearDraft      = clearDraft;
+  window.restoreDraft    = restoreDraft;
+  window.discardDraft    = discardDraft;
 
 })();
 </script>
