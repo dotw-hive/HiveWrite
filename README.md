@@ -4,6 +4,12 @@ A clean, lightweight browser-based Markdown editor for publishing posts directly
 
 ![License: MIT](https://img.shields.io/badge/license-MIT-red.svg)
 
+## Screenshots
+
+| Light Mode | Dark Mode |
+|---|---|
+| ![Light mode](screenshots/light-mode.png) | ![Dark mode](screenshots/dark-mode.png) |
+
 ---
 
 ## Features
